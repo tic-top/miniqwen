@@ -1,21 +1,12 @@
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
-from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
-from torchvision import transforms
-from PIL import Image
-import numpy as np
-from typing import Optional, Dict, Any, List
-from transformers.modeling_outputs import CausalLMOutputWithPast
-from transformers.modeling_utils import PreTrainedModel
-from torch.nn import CrossEntropyLoss
 import torch.nn.functional as F
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, Dict, Any, List, Tuple
 
-import torch
-
+from transformers import AutoModelForCausalLM, GenerationConfig
+from transformers.modeling_utils import PreTrainedModel
 from transformers.utils import ModelOutput
 
 @dataclass
@@ -25,10 +16,10 @@ class CausalULMOutputWithPast(ModelOutput):
     past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
     attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
-    condition_states: Optional[Tuple[torch.FloatTensor, ...]] = None
+    condition_mask: Optional[Tuple[torch.FloatTensor, ...]] = None
 
 class Connector(nn.Module):
-    def __init__(self, hidden_dim, diffusion_dim, num_layers=6, nhead=8):
+    def __init__(self, hidden_dim, diffusion_dim=1024, num_layers=6, nhead=8):
         """
         Connector 模块先用 Transformer Encoder 对输入进行对齐，
         再通过 Linear Projection 映射到 diffusion 模型的条件嵌入空间（例如 768 维）。
@@ -43,17 +34,17 @@ class Connector(nn.Module):
         return self.proj(x)
     
 class Mini1o(PreTrainedModel):
-    def __init__(self, mllm_config, diffusion_config):
+    def __init__(self, mllm_config):
         ## -- load the mllm model -- ##
         self.mllm = AutoModelForCausalLM(mllm_config)
         ## -- set the meta querys for image generation-- ##
         self.hidden_dim = self.mllm.config.hidden_size
         self.num_image_gen_tokens = self.mllm_config.num_image_gen_tokens
         self.image_gen_queries = nn.Parameter(torch.randn(self.num_image_gen_tokens, self.hidden_dim))
-        ## -- set the mllm and dit connector-- ##
-        self.connector = Connector(hidden_dim=mllm_config['hidden_dim'], diffusion_dim=diffusion_config['diffusion_dim'])
+        ## -set ids- ##
         self.img_context_token_id = mllm_config.get("img_context_token_id", 10000)  # 如用于 ViT 特征插入
         self.image_gen_start_token_id = mllm_config.get("image_gen_start_token_id", 15000)  # 表示开始图像生成
+        self.image_gen_context_token_id = mllm_config.get("image_gen_pad_token_id", 15000) 
         self.image_gen_end_token_id = mllm_config.get("image_gen_end_token_id", 15001)      # 表示结束图像生成
 
     def forward(
@@ -138,11 +129,6 @@ class Mini1o(PreTrainedModel):
             # Enable model parallelism
             shift_labels = shift_labels.to(shift_logits.device)
             loss = F.cross_entropy(shift_logits, shift_labels, reduction="mean")
-        if (input_ids == self.image_generation_token_id).sum().item():
-            # get the image features from the hidden states
-            condition_features = hidden_states[-1][image_generation_mask]
-            condition_features = condition_features.reshape(B, num_image_generation_tokens, C)
-            condition_features = self.connector(condition_features)
 
         if not return_dict:
             output = (logits,) + outputs[1:]
@@ -154,23 +140,22 @@ class Mini1o(PreTrainedModel):
             past_key_values=outputs.past_key_values,
             hidden_states=hidden_states,
             attentions=outputs.attentions,
-            condition_states=condition_features,
+            condition_mask=image_generation_mask,
         )
     
 
     @torch.no_grad()
     def generate(
-            self,
-            pixel_values: Optional[torch.FloatTensor] = None,
-            input_ids: Optional[torch.FloatTensor] = None,
-            input_embeds: Optional[torch.FloatTensor] = None,
-            attention_mask: Optional[torch.LongTensor] = None,
-            visual_features: Optional[torch.FloatTensor] = None,
-            generation_config: Optional[GenerationConfig] = None,
-            output_hidden_states: Optional[bool] = None,
-            **generate_kwargs,
+        self,
+        pixel_values: Optional[torch.FloatTensor] = None,
+        input_ids: Optional[torch.FloatTensor] = None,
+        input_embeds: Optional[torch.FloatTensor] = None,
+        attention_mask: Optional[torch.LongTensor] = None,
+        visual_features: Optional[torch.FloatTensor] = None,
+        generation_config: Optional[GenerationConfig] = None,
+        output_hidden_states: Optional[bool] = None,
+        **generate_kwargs,
     ) -> torch.LongTensor:
-
         assert self.img_context_token_id is not None
         if pixel_values is not None:
             if visual_features is not None:
