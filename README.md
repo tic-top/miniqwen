@@ -1,6 +1,10 @@
 # two state
 
-magician-blue/mini4o
+this is the qwenvl2.5 with image_gen token
+model_id = "magician-blue/mini4o"
+
+
+
 
 ## Input illustration
 ```

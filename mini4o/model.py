@@ -7,6 +7,10 @@ from torchvision import transforms
 from PIL import Image
 import numpy as np
 from typing import Optional, Dict, Any
+try:
+    from diffloss import Diffloss
+except:
+    from .diffloss import Diffloss
 
 class Connector(nn.Module):
     def __init__(self, hidden_dim, diffusion_dim, num_layers=4, nhead=8):
@@ -26,13 +30,11 @@ class Connector(nn.Module):
 class Mini4o:
     def __init__(self, mllm_config, diffusion_config):
         self.mllm = AutoModelForCausalLM.from_pretrained(mllm_config['model_name'])
-        self.diffusion_model = UNet2DConditionModel.from_pretrained(diffusion_config['model_name'])
-        self.vae = AutoencoderKL.from_pretrained(diffusion_config['vae_model_name'])
-        self.scheduler = DDPMScheduler.from_pretrained(diffusion_config['scheduler_model_name'])
         self.connector = Connector(hidden_dim=mllm_config['hidden_dim'], diffusion_dim=diffusion_config['diffusion_dim'])
         self.num_queries = self.mllm_config.num_image_gen_tokens
         self.hidden_dim = self.mllm.config.hidden_size
         self.meta_queries = nn.Parameter(torch.randn(self.num_queries, self.hidden_dim))
+        self.diffloss = Diffloss(diffusion_config)
 
     def forward(
         self,
@@ -133,17 +135,11 @@ class Mini4o:
         # 通过 Connector 模块将 meta_features 映射到 diffusion 模型需要的条件嵌入空间
         diffusion_condition = self.connector(meta_features)  # shape: (num_images, tokens_per_image, diffusion_dim)
 
-        return_dict = {
-            "mllm_output": mllm_output,
-            "diffusion_condition": diffusion_condition,
-        }
-
-        return return_dict
-        #### Todo
-        ##### ---- Diffusion 模型 ---- #####
-
-        ##### ---- VAE 模型 ---- #####
-
-
-
+        diff_loss = self.diffloss(
+            clean_image=gen_pixel_values,
+            prompt_embeds=diffusion_condition,
+            image_grid_thw=image_gen_grid_thw,
+            **kwargs
+        )
+        return mllm_output, diff_loss
         # return mllm_output, diffusion_output, decoded_images
