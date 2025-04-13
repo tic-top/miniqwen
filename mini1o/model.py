@@ -166,57 +166,46 @@ class Mini1o(PreTrainedModel):
             attentions=outputs.attentions,
         )
     
+
     @torch.no_grad()
     def generate(
-        self,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        visual_features: Optional[torch.FloatTensor] = None,
-        generation_config: Optional[GenerationConfig] = None,
-        output_hidden_states: Optional[bool] = None,
-        **generate_kwargs,
-    ) -> torch.Tensor:
-        """
-        生成过程：
-          - 如果输入中包含特殊 token (<image_gen_start>，id == 15000)，
-            则先正常生成一段并截取前缀，然后利用 self.image_gen_queries
-            迭代生成图像条件部分，每个 query 依次喂入生成一小段，最后生成一个 <image_gen_end> token，
-            将这些生成结果拼接到前缀后，再作为 prompt 继续生成后续文本。
-          - 否则直接走正常生成流程。
-        """
-        # 通过 pixel_values 提取视觉特征（如果有的话），插入到文本 embedding 对应的位置
+            self,
+            pixel_values: Optional[torch.FloatTensor] = None,
+            input_ids: Optional[torch.FloatTensor] = None,
+            input_embeds: Optional[torch.FloatTensor] = None,
+            attention_mask: Optional[torch.LongTensor] = None,
+            visual_features: Optional[torch.FloatTensor] = None,
+            generation_config: Optional[GenerationConfig] = None,
+            output_hidden_states: Optional[bool] = None,
+            **generate_kwargs,
+    ) -> torch.LongTensor:
+
+        assert self.img_context_token_id is not None
         if pixel_values is not None:
             if visual_features is not None:
                 vit_embeds = visual_features
             else:
-                # 这里假设你有 extract_feature 方法
                 vit_embeds = self.extract_feature(pixel_values)
-            # 获取 LLM 的输入 embeddings
-            inputs_embeds = self.mllm.get_input_embeddings()(input_ids)
-            B, N, C = inputs_embeds.shape
-            inputs_embeds = inputs_embeds.view(B * N, C)
-            input_ids_flat = input_ids.view(B * N)
-            # 找到 context token 位置，并替换为视觉特征
-            selected = (input_ids_flat == self.img_context_token_id)
-            if selected.sum() == 0:
-                raise ValueError("没有检测到 img_context_token_id")
-            inputs_embeds[selected] = vit_embeds.view(-1, C).to(inputs_embeds.device)
-            inputs_embeds = inputs_embeds.view(B, N, C)
+            input_embeds = self.language_model.get_input_embeddings()(input_ids)
+            B, N, C = input_embeds.shape
+            input_embeds = input_embeds.reshape(B * N, C)
+
+            input_ids = input_ids.reshape(B * N)
+            selected = (input_ids == self.img_context_token_id)
+            assert selected.sum() != 0
+            input_embeds[selected] = vit_embeds.reshape(-1, C).to(input_embeds.device)
+
+            input_embeds = input_embeds.reshape(B, N, C)
         else:
-            inputs_embeds = self.mllm.get_input_embeddings()(input_ids)
-        
-        # 检查是否包含特殊的 <image_gen_start>
-        if input_ids is not None and (input_ids == self.image_gen_start_token_id).any():
-            pass
-        else:
-            # 如果没有特殊 token，则直接走常规生成流程
-            outputs = self.mllm.generate(
-                inputs_embeds=inputs_embeds,
-                attention_mask=attention_mask,
-                generation_config=generation_config,
-                output_hidden_states=output_hidden_states,
-                use_cache=True,
-                **generate_kwargs,
-            )
-            return outputs
+            input_embeds = self.language_model.get_input_embeddings()(input_ids)
+
+        outputs = self.language_model.generate(
+            inputs_embeds=input_embeds,
+            attention_mask=attention_mask,
+            generation_config=generation_config,
+            output_hidden_states=output_hidden_states,
+            use_cache=True,
+            **generate_kwargs,
+        )
+
+        return outputs

@@ -1,1 +1,5 @@
-kirp/mini4o
+kirp/*
+
+## __pycache__/
+
+__pycache__/
