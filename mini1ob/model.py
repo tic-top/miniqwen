@@ -10,22 +10,10 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.modeling_utils import PreTrainedModel
 from torch.nn import CrossEntropyLoss
 import torch.nn.functional as F
-
-from dataclasses import dataclass
-from typing import Optional, Tuple
-
-import torch
-
-from transformers.utils import ModelOutput
-
-@dataclass
-class CausalULMOutputWithPast(ModelOutput):
-    loss: Optional[torch.FloatTensor] = None
-    logits: torch.FloatTensor = None
-    past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
-    attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
-    condition_states: Optional[Tuple[torch.FloatTensor, ...]] = None
+try:
+    from diffloss import Diffloss
+except:
+    from .diffloss import Diffloss
 
 class Connector(nn.Module):
     def __init__(self, hidden_dim, diffusion_dim, num_layers=6, nhead=8):
@@ -52,9 +40,12 @@ class Mini1o(PreTrainedModel):
         self.image_gen_queries = nn.Parameter(torch.randn(self.num_image_gen_tokens, self.hidden_dim))
         ## -- set the mllm and dit connector-- ##
         self.connector = Connector(hidden_dim=mllm_config['hidden_dim'], diffusion_dim=diffusion_config['diffusion_dim'])
+        ## Diffusion loss
+        self.diff_loss = Diffloss(diffusion_config)
         self.img_context_token_id = mllm_config.get("img_context_token_id", 10000)  # 如用于 ViT 特征插入
         self.image_gen_start_token_id = mllm_config.get("image_gen_start_token_id", 15000)  # 表示开始图像生成
         self.image_gen_end_token_id = mllm_config.get("image_gen_end_token_id", 15001)      # 表示结束图像生成
+
 
     def forward(
         self,
@@ -70,7 +61,9 @@ class Mini1o(PreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        gen_pixel_values: Optional[torch.FloatTensor] = None, # num_images x 3 x 64 x 64
         **kwargs,
+
     ):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         
@@ -128,7 +121,7 @@ class Mini1o(PreTrainedModel):
         hidden_states = outputs.hidden_states
 
         # get the generated image features fromt the hidden states
-        loss = None
+        text_loss = None
         if labels is not None:
             # Shift so that tokens < n predict n
             shift_logits = logits[..., :-1, :].contiguous()
@@ -137,24 +130,40 @@ class Mini1o(PreTrainedModel):
             shift_labels = shift_labels.view(-1)
             # Enable model parallelism
             shift_labels = shift_labels.to(shift_logits.device)
-            loss = F.cross_entropy(shift_logits, shift_labels, reduction="mean")
-        if (input_ids == self.image_generation_token_id).sum().item():
+            text_loss = F.cross_entropy(shift_logits, shift_labels, reduction="mean")
+        image_loss = None
+        if gen_pixel_values is not None:
             # get the image features from the hidden states
             condition_features = hidden_states[-1][image_generation_mask]
             condition_features = condition_features.reshape(B, num_image_generation_tokens, C)
             condition_features = self.connector(condition_features)
 
+            # pass the diffusion model to get the output feature
+            image_loss = self.diffusion_model(
+                clean_image=gen_pixel_values,
+                prompt_embeds=condition_features,
+                return_dict=True,
+            )
+
+        if text_loss is not None and image_loss is not None:
+            print('error, now just train the image')
+            loss = text_loss + image_loss
+        elif text_loss is not None:
+            print('error, now just train the image')
+            loss = text_loss
+        elif image_loss is not None:
+            loss = image_loss
+
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
 
-        return CausalULMOutputWithPast(
+        return CausalLMOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,
             hidden_states=hidden_states,
             attentions=outputs.attentions,
-            condition_states=condition_features,
         )
     
 

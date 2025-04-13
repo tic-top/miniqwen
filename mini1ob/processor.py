@@ -5,7 +5,6 @@ import torch
 import numpy as np
 from PIL import Image
 from transformers import ProcessorMixin, ImageProcessingMixin
-from diffusers.image_processor import PixArtImageProcessor
 from transformers.image_processing_utils_fast import BaseImageProcessorFast
 from transformers.image_processing_utils import (
     BaseImageProcessor,
@@ -205,14 +204,13 @@ class Mini1oProcessor(ProcessorMixin):
         chat_template (str, optional): 可选的对话模板，用于组织多轮对话文本（内部使用 Jinja 或自定义模板）。
         system_message (str, optional): 系统提示信息，将在构造对话输入时自动添加。
     """
-    attributes = ["image_processor", "tokenizer", "gen_image_processor"]
+    attributes = ["image_processor", "tokenizer"]
     valid_kwargs = ["chat_template"]
 
     image_processor_class = "AutoImageProcessor"
     tokenizer_class = ("Qwen2Tokenizer", "Qwen2TokenizerFast")
 
-    def __init__(self, image_processor: Mini1oImageProcessor, tokenizer, gen_image_processor: Optional[PixArtImageProcessor] = None, chat_template: Union[str, None] = None, system_message: str = "", **kwargs):
-        self.gen_image_processor = gen_image_processor
+    def __init__(self, image_processor: Mini1oImageProcessor, tokenizer, chat_template: Union[str, None] = None, system_message: str = "", **kwargs):
         self.image_pad_token = "<|image_pad|>" if not hasattr(tokenizer, "image_token") else tokenizer.image_token
         self.video_pad_token = "<|video_pad|>" if not hasattr(tokenizer, "video_token") else tokenizer.video_token
         self.image_gen_token = "<|image_gen_pad|>" if not hasattr(tokenizer, "image_gen_token") else tokenizer.image_gen_token
@@ -246,10 +244,13 @@ class Mini1oProcessor(ProcessorMixin):
             image_outputs = {}
             image_num_patches_list = None
         if gen_images is not None:
+            # 这个处理不太一样，可能要看sana怎么做的
             pass
-            # image_gen_outputs = self.gen_image_processor(images=gen_images)
+            # image_gen_outputs = self.image_processor(images=gen_images)
+            # image_gen_num_patches_list = image_gen_outputs["num_patches_list"]
         else:
             image_gen_outputs = {}
+            image_gen_num_patches_list = None
 
         ## 有pixel value, num_patches_list
         # assert 所有prompt的image_pad_token的数量，和image_outputs['num_patches_list'].shape[0]一样
