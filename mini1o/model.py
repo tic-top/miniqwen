@@ -18,6 +18,7 @@ class CausalULMOutputWithPast(ModelOutput):
     attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
     condition_mask: Optional[Tuple[torch.FloatTensor, ...]] = None
 
+## connector between Mini1o and Dit  
 class Connector(nn.Module):
     def __init__(self, hidden_dim, diffusion_dim=1024, num_layers=6, nhead=8):
         """
@@ -33,15 +34,17 @@ class Connector(nn.Module):
         x = self.encoder(x)
         return self.proj(x)
     
-class Mini1o(PreTrainedModel):
+## this the mllm part of Mini1o    
+class Mini1oMLLM(PreTrainedModel):
     def __init__(self, mllm_config):
         ## -- load the mllm model -- ##
         self.mllm = AutoModelForCausalLM(mllm_config)
         ## -- set the meta querys for image generation-- ##
         self.hidden_dim = self.mllm.config.hidden_size
-        self.num_image_gen_tokens = self.mllm_config.num_image_gen_tokens
         self.image_gen_queries = nn.Parameter(torch.randn(self.num_image_gen_tokens, self.hidden_dim))
-        ## -set ids- ##
+        ## -- set ids -- ##
+        
+        self.num_image_gen_tokens = self.mllm_config.num_image_gen_tokens
         self.img_context_token_id = mllm_config.get("img_context_token_id", 10000)  # 如用于 ViT 特征插入
         self.image_gen_start_token_id = mllm_config.get("image_gen_start_token_id", 15000)  # 表示开始图像生成
         self.image_gen_context_token_id = mllm_config.get("image_gen_pad_token_id", 15000) 
