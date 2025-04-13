@@ -201,6 +201,7 @@ class Mini1oProcessor(ProcessorMixin):
 
     参数:
         image_processor ([`Mini1oImageProcessor`]): 用于图像预处理。
+        gen_image_processor: vae_scale_factor= 0.41407
         tokenizer: 文本 tokenizer 对象。
         chat_template (str, optional): 可选的对话模板，用于组织多轮对话文本（内部使用 Jinja 或自定义模板）。
         system_message (str, optional): 系统提示信息，将在构造对话输入时自动添加。
@@ -288,6 +289,13 @@ class Mini1oProcessor(ProcessorMixin):
             clean_up_tokenization_spaces=clean_up_tokenization_spaces,
             **kwargs,
         )
+    
+    def post_process_image(self, images):
+        """
+        images are torch tensor
+        shape batch * 3 * H * W
+        """
+        return self.gen_image_processor.postprocess(images)
 
     def batch_decode(self, *args, **kwargs) -> List[str]:
         """
