@@ -5,8 +5,6 @@ import torch
 import numpy as np
 from PIL import Image
 from transformers import ProcessorMixin, ImageProcessingMixin
-from diffusers.image_processor import PixArtImageProcessor
-from transformers.image_processing_utils_fast import BaseImageProcessorFast
 from transformers.image_processing_utils import (
     BaseImageProcessor,
     BatchFeature,
@@ -29,19 +27,16 @@ from transformers.utils import (
     is_vision_available,
     logging,
 )
-from torchvision import transforms
-from transformers.image_utils import (
-    IMAGENET_STANDARD_MEAN,
-    IMAGENET_STANDARD_STD,
-    ImageInput,
-    SizeDict,
-)
 
 if is_torchvision_available():
     if is_torchvision_v2_available():
         from torchvision.transforms.v2 import functional as F
     else:
         from torchvision.transforms import functional as F
+
+from diffusers.image_processor import PixArtImageProcessor
+from transformers import AutoProcessor 
+AutoProcessor.register(PixArtImageProcessor, "PixArtImageProcessor")
 
 ##########################################
 # Mini1o 图像预处理器
@@ -206,21 +201,20 @@ class Mini1oProcessor(ProcessorMixin):
         chat_template (str, optional): 可选的对话模板，用于组织多轮对话文本（内部使用 Jinja 或自定义模板）。
         system_message (str, optional): 系统提示信息，将在构造对话输入时自动添加。
     """
-    attributes = ["image_processor", "tokenizer", "gen_image_processor"]
+    attributes = ["image_processor", "tokenizer"]
     valid_kwargs = ["chat_template"]
 
     image_processor_class = "AutoImageProcessor"
     tokenizer_class = ("Qwen2Tokenizer", "Qwen2TokenizerFast")
 
-    def __init__(self, image_processor: Mini1oImageProcessor, tokenizer, gen_image_processor: Optional[PixArtImageProcessor] = None, chat_template: Union[str, None] = None, system_message: str = "", **kwargs):
-        self.gen_image_processor = gen_image_processor
+    def __init__(self, image_processor: Mini1oImageProcessor, tokenizer, chat_template: Union[str, None] = None, system_message: str = "", **kwargs):
         self.image_pad_token = "<|image_pad|>" if not hasattr(tokenizer, "image_token") else tokenizer.image_token
         self.video_pad_token = "<|video_pad|>" if not hasattr(tokenizer, "video_token") else tokenizer.video_token
         self.image_gen_token = "<|image_gen_pad|>" if not hasattr(tokenizer, "image_gen_token") else tokenizer.image_gen_token
         self.video_gen_token = "<|video_gen_pad|>" if not hasattr(tokenizer, "video_gen_token") else tokenizer.video_gen_token
         self.num_image_gen_token = 64
-        super().__init__(image_processor, tokenizer, chat_template=chat_template, **kwargs)
-
+        super().__init__(image_processor, tokenizer, chat_template=chat_template)
+        
     def __call__(
         self,
         images: Union[Image.Image, str, List[Union[Image.Image, str]]] = None,
@@ -247,14 +241,11 @@ class Mini1oProcessor(ProcessorMixin):
             image_outputs = {}
             image_num_patches_list = None
         if gen_images is not None:
-            pass
             # image_gen_outputs = self.gen_image_processor(images=gen_images)
+            pass
         else:
             image_gen_outputs = {}
 
-        ## 有pixel value, num_patches_list
-        # assert 所有prompt的image_pad_token的数量，和image_outputs['num_patches_list'].shape[0]一样
-        # assert 所有prompt的video_gen_token的数量，和image_gen_outputs['num_patches_list'].shape[0]一样
         if not isinstance(text, list):
             text = [text]
         
@@ -265,6 +256,7 @@ class Mini1oProcessor(ProcessorMixin):
                     text[i] = text[i].replace(self.image_pad_token, "<|placeholder|>" * image_num_patches_list[index], 1)
                     index += 1
                 text[i] = text[i].replace("<|placeholder|>", self.image_pad_token)
+            assert index == len(image_num_patches_list), "num of image pad and num of image are different"
         
         if True:
             index = 0
@@ -289,13 +281,6 @@ class Mini1oProcessor(ProcessorMixin):
             clean_up_tokenization_spaces=clean_up_tokenization_spaces,
             **kwargs,
         )
-    
-    def post_process_image(self, images):
-        """
-        images are torch tensor
-        shape batch * 3 * H * W
-        """
-        return self.gen_image_processor.postprocess(images)
 
     def batch_decode(self, *args, **kwargs) -> List[str]:
         """
