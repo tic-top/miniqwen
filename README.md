@@ -1,9 +1,39 @@
-# two state
+# A trial to reimplement 4o
 
-this is the qwenvl2.5 with image_gen token
-model_id = "magician-blue/mini4o"
+## 2 Stage training
+### Stage 1 pretraining
+Open sources data: pix2pix, kosmosg里面应该有，GOT里面有
+t2i
+ti2ti
+ti2ti2ti...
+kosmosg: LAION-2B [SBV+22], LAION-400M [SVB+21], COYO-700M [BPK+22], and Conceptual Captions [SDGS18, CSDS21]
 
 
+
+### Stage instruction tunning
+1. Single- and multi-turn language-guided image-editing from MagicBrush (Zhang et al., 2024) and
+SEED (Ge et al., 2024) (only involving the real-world and multi-turn subsets).
+2. Dense prediction tasks, including surface norm estimation from NYUv2 Silberman et al. (2012)
+and ScanNet Dai et al. (2017), depth estimation from Kitti v2 Cabon et al. (2020) and Sintel Butler
+et al. (2012), pose estimation from MSCOCO Lin et al. (2014), semantic segmentation data annotated
+with OneFormer (Jain et al., 2023) on image from Laion (Schuhmann et al., 2022), and grounding
+data from RefCOCO (Kazemzadeh et al., 2014).
+
+
+Metaquery提到的构造的数据集
+还是多个图片作为input，但是output只是一张图片
+
+
+
+
+<image>
+<image>
+
+<gen_image>
+
+<gen_image>
+
+<image>
 
 
 ## Input illustration
@@ -59,21 +89,3 @@ Describe this image.
 ```
 
 
-## stage 1 pretraining to align the image
-可能没有图文交错的生成任务
-
-## stage 2 instruction tunning
-还是多个图片作为input，但是output只是一张图片
-
-## 还是可以构造一个交错的，一会儿理解一会儿生成的数据集
-
-<image>
-<image>
-
-<gen_image>
-
-<gen_image>
-
-<image>
-
-任意交错的才是最好的

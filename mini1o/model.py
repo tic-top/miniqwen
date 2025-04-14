@@ -1,8 +1,12 @@
 import torch
 import torch.nn as nn
 
-from dit import Mini1oDiT
-from mllm import Mini1oConnector, Mini1oMLLM
+try:
+    from dit import Mini1oDiT
+    from mllm import Mini1oConnector, Mini1oMLLM
+except:
+    from .dit import Mini1oDiT
+    from .mllm import Mini1oConnector, Mini1oMLLM
 
 class Mini1o(nn.Module):
     def __init__(self, dit_config: dict, mllm_config: dict, connector_config: dict):
