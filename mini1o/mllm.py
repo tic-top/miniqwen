@@ -18,6 +18,28 @@ class CausalULMOutputWithPast(ModelOutput):
     attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
     condition_mask: Optional[Tuple[torch.FloatTensor, ...]] = None
 
+from transformers import PretrainedConfig
+# 定义自定义的配置类
+class Mini1oMLLMConfig(PretrainedConfig):
+    model_type = "mini1omllm"
+    def __init__(
+        self,
+        pretrained_model_name_or_path: str = None,
+        num_image_gen_tokens: int = 64,
+        img_context_token_id: int = 10000,
+        image_gen_start_token_id: int = 15000,
+        image_gen_context_token_id: int = 15000,
+        image_gen_end_token_id: int = 15001,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.pretrained_model_name_or_path = pretrained_model_name_or_path
+        self.num_image_gen_tokens = num_image_gen_tokens
+        self.img_context_token_id = img_context_token_id
+        self.image_gen_start_token_id = image_gen_start_token_id
+        self.image_gen_context_token_id = image_gen_context_token_id
+        self.image_gen_end_token_id = image_gen_end_token_id
+
 ## connector between Mini1o and Dit  
 class Mini1oConnector(nn.Module):
     def __init__(self, hidden_dim, diffusion_dim=2304, num_layers=6, nhead=8):
@@ -36,20 +58,29 @@ class Mini1oConnector(nn.Module):
     
 ## mllm part of Mini1o    
 class Mini1oMLLM(PreTrainedModel):
-    def __init__(self, mllm_config):
-        ## -- load the mllm model -- ##
-        self.mllm = AutoModelForCausalLM(mllm_config)
+    config_class = Mini1oMLLMConfig
 
-        ## -- set the meta querys for image generation-- ##
+    def __init__(self, config: Mini1oMLLMConfig):
+        # 使用传入的配置对象初始化父类
+        super().__init__(config)
+        self.config = config
+
+        # 载入基础模型（例如 OpenGVLab/InternVL3-1B）
+        self.mllm = AutoModelForCausalLM.from_pretrained(config.pretrained_model_name_or_path)
+        
+        # 为方便后续调用，统一设置 language_model 属性（部分接口里同时用到 mllm 和 language_model）
+        self.language_model = self.mllm.language_model
+
+        # 使用配置中的 token id 参数（也可从 self.mllm.config 中获取默认值）
+        self.num_image_gen_tokens = config.num_image_gen_tokens
+        self.img_context_token_id = config.img_context_token_id
+        self.image_gen_start_token_id = config.image_gen_start_token_id
+        self.image_gen_context_token_id = config.image_gen_context_token_id
+        self.image_gen_end_token_id = config.image_gen_end_token_id
+
+        # 获取基础模型隐藏层维度后初始化 meta query 参数
         self.hidden_dim = self.mllm.config.hidden_size
         self.image_gen_queries = nn.Parameter(torch.randn(self.num_image_gen_tokens, self.hidden_dim))
-
-        ## -- set ids -- ##
-        self.num_image_gen_tokens = self.mllm_config.num_image_gen_tokens
-        self.img_context_token_id = mllm_config.get("img_context_token_id", 10000)  # 如用于 ViT 特征插入
-        self.image_gen_start_token_id = mllm_config.get("image_gen_start_token_id", 15000)  # 表示开始图像生成
-        self.image_gen_context_token_id = mllm_config.get("image_gen_pad_token_id", 15000) 
-        self.image_gen_end_token_id = mllm_config.get("image_gen_end_token_id", 15001)      # 表示结束图像生成
 
     def forward(
         self,
@@ -146,7 +177,6 @@ class Mini1oMLLM(PreTrainedModel):
             condition_mask=image_generation_mask,
         )
     
-
     @torch.no_grad()
     def generate(
         self,
@@ -166,8 +196,8 @@ class Mini1oMLLM(PreTrainedModel):
             if visual_features is not None:
                 vit_embeds = visual_features
             else:
-                vit_embeds = self.extract_feature(pixel_values)
-            input_embeds = self.language_model.get_input_embeddings()(input_ids)
+                vit_embeds = self.mllm.extract_feature(pixel_values)
+            input_embeds = self.mllm.language_model.get_input_embeddings()(input_ids)
             B, N, C = input_embeds.shape
             input_embeds = input_embeds.reshape(B * N, C)
 
@@ -178,7 +208,7 @@ class Mini1oMLLM(PreTrainedModel):
 
             input_embeds = input_embeds.reshape(B, N, C)
         else:
-            input_embeds = self.language_model.get_input_embeddings()(input_ids)
+            input_embeds = self.mllm.language_model.get_input_embeddings()(input_ids)
 
         if image_gen_context_token_mask.any():
             # 计算每个负数对应的 meta 索引：假设 -1 对应 metaquery 0、-2 对应 metaquery 1 以此类推
