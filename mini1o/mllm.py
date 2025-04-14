@@ -66,10 +66,13 @@ class Mini1oMLLM(PreTrainedModel):
         self.config = config
 
         # 载入基础模型（例如 OpenGVLab/InternVL3-1B）
-        self.mllm = AutoModelForCausalLM.from_pretrained(config.pretrained_model_name_or_path)
+        self.mllm = AutoModelForCausalLM.from_pretrained(config.pretrained_model_name_or_path,
+                                                        torch_dtype=torch.float16,
+                                                        use_flash_attn=False)
         
         # 为方便后续调用，统一设置 language_model 属性（部分接口里同时用到 mllm 和 language_model）
-        self.language_model = self.mllm.language_model
+        self.mllm.language_model = self.mllm.language_model
+
 
         # 使用配置中的 token id 参数（也可从 self.mllm.config 中获取默认值）
         self.num_image_gen_tokens = config.num_image_gen_tokens
@@ -158,7 +161,7 @@ class Mini1oMLLM(PreTrainedModel):
             # Shift so that tokens < n predict n
             shift_logits = logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
-            shift_logits = shift_logits.view(-1, self.language_model.config.vocab_size)
+            shift_logits = shift_logits.view(-1, self.mllm.language_model.config.vocab_size)
             shift_labels = shift_labels.view(-1)
             # Enable model parallelism
             shift_labels = shift_labels.to(shift_logits.device)
