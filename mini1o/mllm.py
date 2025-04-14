@@ -34,16 +34,17 @@ class Mini1oConnector(nn.Module):
         x = self.encoder(x)
         return self.proj(x)
     
-## this the mllm part of Mini1o    
+## mllm part of Mini1o    
 class Mini1oMLLM(PreTrainedModel):
     def __init__(self, mllm_config):
         ## -- load the mllm model -- ##
         self.mllm = AutoModelForCausalLM(mllm_config)
+
         ## -- set the meta querys for image generation-- ##
         self.hidden_dim = self.mllm.config.hidden_size
         self.image_gen_queries = nn.Parameter(torch.randn(self.num_image_gen_tokens, self.hidden_dim))
+
         ## -- set ids -- ##
-        
         self.num_image_gen_tokens = self.mllm_config.num_image_gen_tokens
         self.img_context_token_id = mllm_config.get("img_context_token_id", 10000)  # 如用于 ViT 特征插入
         self.image_gen_start_token_id = mllm_config.get("image_gen_start_token_id", 15000)  # 表示开始图像生成
@@ -99,7 +100,7 @@ class Mini1oMLLM(PreTrainedModel):
             num_image_generation_tokens = image_generation_mask.sum().item()
             # n = gen_pixel_values.shape[0]
             n = num_image_generation_tokens // self.num_image_gen_tokens
-            num_image_generation_features = self.num_image_gen_tokens * n# 64 * num of images
+            num_image_generation_features = self.num_image_gen_tokens * n # 64 * num of images
             if num_image_generation_tokens != num_image_generation_features:
                 raise ValueError(f"num_image_generation_tokens: {num_image_generation_tokens}, "
                                  f"num_image_generation_features: {num_image_generation_features}")
@@ -152,7 +153,6 @@ class Mini1oMLLM(PreTrainedModel):
         self,
         pixel_values: Optional[torch.FloatTensor] = None,
         input_ids: Optional[torch.FloatTensor] = None,
-        input_embeds: Optional[torch.FloatTensor] = None,
         attention_mask: Optional[torch.LongTensor] = None,
         visual_features: Optional[torch.FloatTensor] = None,
         generation_config: Optional[GenerationConfig] = None,
@@ -160,6 +160,9 @@ class Mini1oMLLM(PreTrainedModel):
         **generate_kwargs,
     ) -> torch.LongTensor:
         assert self.img_context_token_id is not None
+        # 先备份一个input_ids
+        image_gen_context_token_mask = input_ids < 0  # [B, L]
+        input_ids = input_ids.abs()
         if pixel_values is not None:
             if visual_features is not None:
                 vit_embeds = visual_features
@@ -178,7 +181,18 @@ class Mini1oMLLM(PreTrainedModel):
         else:
             input_embeds = self.language_model.get_input_embeddings()(input_ids)
 
-        outputs = self.language_model.generate(
+        if image_gen_context_token_mask.any():
+            # 计算每个负数对应的 meta 索引：假设 -1 对应 metaquery 0、-2 对应 metaquery 1 以此类推
+            meta_idx = (input_ids - 1)[image_gen_context_token_mask]
+            
+            # 可选：检查是否有超出预定义范围的情况
+            if meta_idx.max() >= self.image_gen_queries.shape[0]:
+                raise ValueError("meta token 超出预定义 metaquery 长度")
+            
+            # 利用布尔索引直接替换指定位置的 embeddings
+            input_embeds[image_gen_context_token_mask] = self.image_gen_queries[meta_idx].to(input_embeds.device)
+
+        outputs = self.mllm.language_model.generate(
             inputs_embeds=input_embeds,
             attention_mask=attention_mask,
             generation_config=generation_config,
