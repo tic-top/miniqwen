@@ -96,9 +96,8 @@ class Mini1oMLLM(PreTrainedModel):
                 inputs_embeds[image_mask] = inputs_embeds[image_mask] * 0.0 + vit_embeds[:n_token]
             
             ## -- insert the meta queries into the input embeddings -- ##
-            image_generation_mask = (input_ids == self.image_generation_token_id)
+            image_generation_mask = (input_ids == self.image_gen_context_token_id)
             num_image_generation_tokens = image_generation_mask.sum().item()
-            # n = gen_pixel_values.shape[0]
             n = num_image_generation_tokens // self.num_image_gen_tokens
             num_image_generation_features = self.num_image_gen_tokens * n # 64 * num of images
             if num_image_generation_tokens != num_image_generation_features:
