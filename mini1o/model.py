@@ -3,10 +3,26 @@ import torch.nn as nn
 
 try:
     from dit import Mini1oDiT
-    from mllm import Mini1oConnector, Mini1oMLLM
+    from mllm import Mini1oMLLM
 except:
     from .dit import Mini1oDiT
-    from .mllm import Mini1oConnector, Mini1oMLLM
+    from .mllm import Mini1oMLLM
+
+
+# Connector 模块：用于将输入（例如 image embedding）转换并对齐
+class Mini1oConnector(nn.Module):
+    def __init__(self, hidden_dim, diffusion_dim=2304, num_layers=6, nhead=8):
+        """
+        先使用 Transformer Encoder 对输入进行对齐，再通过 Linear Projection 映射到目标维度
+        """
+        super().__init__()
+        encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_dim, nhead=nhead, batch_first=True)
+        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.proj = nn.Linear(hidden_dim, diffusion_dim)
+
+    def forward(self, x):
+        x = self.encoder(x)
+        return self.proj(x)
 
 class Mini1o(nn.Module):
     def __init__(self, dit_config: dict, mllm_config: dict, connector_config: dict):

@@ -1,14 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List, Tuple
-
-from transformers import AutoModelForCausalLM, GenerationConfig
-from transformers.modeling_utils import PreTrainedModel
+from typing import Optional, List, Tuple
+from transformers import AutoModelForCausalLM, GenerationConfig, PreTrainedModel
 from transformers.utils import ModelOutput
+from .config import Mini1oConfig
 
+# 自定义 ModelOutput，增加 condition_mask 用于标记特殊处理位置
 @dataclass
 class CausalULMOutputWithPast(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
@@ -16,74 +15,29 @@ class CausalULMOutputWithPast(ModelOutput):
     past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
     attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
-    condition_mask: Optional[Tuple[torch.FloatTensor, ...]] = None
+    condition_mask: Optional[torch.Tensor] = None
 
-from transformers import PretrainedConfig
-# 定义自定义的配置类
-class Mini1oMLLMConfig(PretrainedConfig):
-    model_type = "mini1omllm"
-    def __init__(
-        self,
-        pretrained_model_name_or_path: str = None,
-        num_image_gen_tokens: int = 64,
-        img_context_token_id: int = 10000,
-        image_gen_start_token_id: int = 15000,
-        image_gen_context_token_id: int = 15000,
-        image_gen_end_token_id: int = 15001,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-        self.pretrained_model_name_or_path = pretrained_model_name_or_path
-        self.num_image_gen_tokens = num_image_gen_tokens
-        self.img_context_token_id = img_context_token_id
-        self.image_gen_start_token_id = image_gen_start_token_id
-        self.image_gen_context_token_id = image_gen_context_token_id
-        self.image_gen_end_token_id = image_gen_end_token_id
-
-## connector between Mini1o and Dit  
-class Mini1oConnector(nn.Module):
-    def __init__(self, hidden_dim, diffusion_dim=2304, num_layers=6, nhead=8):
-        """
-        Connector 模块先用 Transformer Encoder 对输入进行对齐，
-        再通过 Linear Projection 映射到 diffusion 模型的条件嵌入空间（例如 768 维）。
-        """
-        super().__init__()
-        encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_dim, nhead=nhead, batch_first=True)
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        self.proj = nn.Linear(hidden_dim, diffusion_dim)
-
-    def forward(self, x):
-        x = self.encoder(x)
-        return self.proj(x)
-    
-## mllm part of Mini1o    
+# 主模型类，集成自 Hugging Face 的 PreTrainedModel
 class Mini1oMLLM(PreTrainedModel):
-    config_class = Mini1oMLLMConfig
-
-    def __init__(self, config: Mini1oMLLMConfig):
-        # 使用传入的配置对象初始化父类
+    config_class = Mini1oConfig  # 指定自定义配置
+    
+    def __init__(self, config: Mini1oConfig):
         super().__init__(config)
         self.config = config
 
-        # 载入基础模型（例如 OpenGVLab/InternVL3-1B）
-        self.mllm = AutoModelForCausalLM.from_pretrained(config.pretrained_model_name_or_path,
-                                                        torch_dtype=torch.float16,
-                                                        use_flash_attn=False)
-        
-        # 为方便后续调用，统一设置 language_model 属性（部分接口里同时用到 mllm 和 language_model）
-        self.mllm.language_model = self.mllm.language_model
+        # 从预训练模型加载基础 mllm（例如一个 causal LM 模型）
+        self.mllm = AutoModelForCausalLM(config.llm_config)
 
-
-        # 使用配置中的 token id 参数（也可从 self.mllm.config 中获取默认值）
-        self.num_image_gen_tokens = config.num_image_gen_tokens
+        # 记录特殊 token id 参数
+        self.num_img_gen_tokens = config.num_img_gen_tokens
         self.img_context_token_id = config.img_context_token_id
-        self.image_gen_start_token_id = config.image_gen_start_token_id
-        self.image_gen_context_token_id = config.image_gen_context_token_id
-        self.image_gen_end_token_id = config.image_gen_end_token_id
+        self.img_gen_start_token_id = config.img_gen_start_token_id
+        self.img_gen_context_token_id = config.img_gen_context_token_id
+        self.img_gen_end_token_id = config.img_gen_end_token_id
 
-        # 获取基础模型隐藏层维度后初始化 meta query 参数
+        # 依据基础模型 hidden_size 来初始化 meta query 参数
         self.hidden_dim = self.mllm.config.hidden_size
-        self.image_gen_queries = nn.Parameter(torch.randn(self.num_image_gen_tokens, self.hidden_dim))
+        self.img_gen_queries = nn.Parameter(torch.randn(self.num_img_gen_tokens, self.hidden_dim))
 
     def forward(
         self,
@@ -102,46 +56,42 @@ class Mini1oMLLM(PreTrainedModel):
         **kwargs,
     ):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        
+
         if inputs_embeds is None:
-            ## -- get the text embeddings -- ##
+            # 获取文本的 embeddings
             inputs_embeds = self.mllm.language_model.get_input_embeddings()(input_ids).clone()
             B, N, C = inputs_embeds.shape
-            inputs_embeds = inputs_embeds.reshape(B * N, C)
+            inputs_embeds = inputs_embeds.view(B * N, C)
 
-            ## -- get the image embeddings -- ##
+            # 获取 image embeddings（依据 image_flags 决定哪些样本需要替换）
             image_flags = image_flags.squeeze(-1)
             vit_embeds = self.mllm.extract_feature(pixel_values)
             vit_embeds = vit_embeds[image_flags == 1]
-            vit_batch_size = pixel_values.shape[0]
             if torch.distributed.is_initialized() and torch.distributed.get_rank() == 0:
+                vit_batch_size = pixel_values.shape[0]
                 print(f'dynamic ViT batch size: {vit_batch_size}, images per sample: {vit_batch_size / B}, dynamic token length: {N}')
 
-            ## -- insert the image embeddings into the input embeddings -- ##
-            input_ids = input_ids.reshape(B * N)
-            image_mask = (input_ids == self.img_context_token_id)
+            # 替换输入 embedding 中标记为图像上下文的 token（img_context_token_id）
+            input_ids_flat = input_ids.view(B * N)
+            image_mask = (input_ids_flat == self.img_context_token_id)
             try:
-                inputs_embeds[image_mask] = inputs_embeds[image_mask] * 0.0 + vit_embeds.reshape(-1, C)
+                inputs_embeds[image_mask] = vit_embeds.view(-1, C)
             except Exception as e:
-                vit_embeds = vit_embeds.reshape(-1, C)
-                print(f'warning: {e}, inputs_embeds[image_mask].shape={inputs_embeds[image_mask].shape}, '
-                    f'vit_embeds.shape={vit_embeds.shape}')
                 n_token = image_mask.sum()
-                inputs_embeds[image_mask] = inputs_embeds[image_mask] * 0.0 + vit_embeds[:n_token]
+                inputs_embeds[image_mask] = vit_embeds.view(-1, C)[:n_token]
             
-            ## -- insert the meta queries into the input embeddings -- ##
-            image_generation_mask = (input_ids == self.image_gen_context_token_id)
-            num_image_generation_tokens = image_generation_mask.sum().item()
-            n = num_image_generation_tokens // self.num_image_gen_tokens
-            num_image_generation_features = self.num_image_gen_tokens * n # 64 * num of images
-            if num_image_generation_tokens != num_image_generation_features:
-                raise ValueError(f"num_image_generation_tokens: {num_image_generation_tokens}, "
-                                 f"num_image_generation_features: {num_image_generation_features}")
-            
-            repeated_queries = self.image_gen_queries.unsqueeze(0).repeat(n, 1, 1).reshape(-1, C)
-            inputs_embeds[image_generation_mask] = repeated_queries
-            inputs_embeds = inputs_embeds.reshape(B, N, C)
-
+            # 替换为 meta query（当 token id 与 img_gen_context_token_id 匹配时）
+            img_generation_mask = (input_ids_flat == self.img_gen_context_token_id)
+            num_img_generation_tokens = img_generation_mask.sum().item()
+            n = num_img_generation_tokens // self.num_img_gen_tokens
+            num_img_generation_features = self.num_img_gen_tokens * n
+            if num_img_generation_tokens != num_img_generation_features:
+                raise ValueError(f"num_img_generation_tokens: {num_img_generation_tokens}, "
+                                 f"expected multiple of {self.num_img_gen_tokens}")
+            repeated_queries = self.img_gen_queries.unsqueeze(0).repeat(n, 1, 1).view(-1, C)
+            inputs_embeds[img_generation_mask] = repeated_queries
+            inputs_embeds = inputs_embeds.view(B, N, C)
+        
         outputs = self.mllm.language_model(
             inputs_embeds=inputs_embeds,
             attention_mask=attention_mask,
@@ -154,76 +104,67 @@ class Mini1oMLLM(PreTrainedModel):
         )
         logits = outputs.logits
         hidden_states = outputs.hidden_states
-
-        # get the generated image features fromt the hidden states
+        
         loss = None
         if labels is not None:
-            # Shift so that tokens < n predict n
+            # Shift logits 和 labels 以计算交叉熵 loss
             shift_logits = logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
             shift_logits = shift_logits.view(-1, self.mllm.language_model.config.vocab_size)
-            shift_labels = shift_labels.view(-1)
-            # Enable model parallelism
-            shift_labels = shift_labels.to(shift_logits.device)
+            shift_labels = shift_labels.view(-1).to(shift_logits.device)
             loss = F.cross_entropy(shift_logits, shift_labels, reduction="mean")
-
+        
         if not return_dict:
-            output = (logits,) + outputs[1:]
-            return (loss,) + output if loss is not None else output
-
+            out = (logits,) + outputs[1:]
+            return (loss,) + out if loss is not None else out
+        
         return CausalULMOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,
             hidden_states=hidden_states,
             attentions=outputs.attentions,
-            condition_mask=image_generation_mask,
+            condition_mask=img_generation_mask if 'img_generation_mask' in locals() else None,
         )
     
     @torch.no_grad()
     def generate(
         self,
         pixel_values: Optional[torch.FloatTensor] = None,
-        input_ids: Optional[torch.FloatTensor] = None,
+        input_ids: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.LongTensor] = None,
         visual_features: Optional[torch.FloatTensor] = None,
         generation_config: Optional[GenerationConfig] = None,
         output_hidden_states: Optional[bool] = None,
         **generate_kwargs,
     ) -> torch.LongTensor:
-        assert self.img_context_token_id is not None
-        # 先备份一个input_ids
-        image_gen_context_token_mask = input_ids < 0  # [B, L]
+        # 负数标记的 token 用于 meta query 替换
+        img_gen_context_token_mask = input_ids < 0
         input_ids = input_ids.abs()
+        
         if pixel_values is not None:
-            if visual_features is not None:
-                vit_embeds = visual_features
-            else:
-                vit_embeds = self.mllm.extract_feature(pixel_values)
+            # 根据 pixel_values 获取 image embeddings
+            vit_embeds = visual_features if visual_features is not None else self.mllm.extract_feature(pixel_values)
             input_embeds = self.mllm.language_model.get_input_embeddings()(input_ids)
             B, N, C = input_embeds.shape
-            input_embeds = input_embeds.reshape(B * N, C)
+            input_embeds = input_embeds.view(B * N, C)
 
-            input_ids = input_ids.reshape(B * N)
-            selected = (input_ids == self.img_context_token_id)
-            assert selected.sum() != 0
-            input_embeds[selected] = vit_embeds.reshape(-1, C).to(input_embeds.device)
-
-            input_embeds = input_embeds.reshape(B, N, C)
+            input_ids_flat = input_ids.view(B * N)
+            selected = (input_ids_flat == self.img_context_token_id)
+            if selected.sum() == 0:
+                raise ValueError("未找到 image context token")
+            input_embeds[selected] = vit_embeds.view(-1, C).to(input_embeds.device)
+            input_embeds = input_embeds.view(B, N, C)
         else:
             input_embeds = self.mllm.language_model.get_input_embeddings()(input_ids)
-
-        if image_gen_context_token_mask.any():
-            # 计算每个负数对应的 meta 索引：假设 -1 对应 metaquery 0、-2 对应 metaquery 1 以此类推
-            meta_idx = (input_ids - 1)[image_gen_context_token_mask]
-            
-            # 可选：检查是否有超出预定义范围的情况
-            if meta_idx.max() >= self.image_gen_queries.shape[0]:
+        
+        if img_gen_context_token_mask.any():
+            # 将负数 token 映射到 meta query：例如 -1 对应 index 0，-2 对应 index 1，依此类推
+            meta_idx = (input_ids - 1)[img_gen_context_token_mask]
+            if meta_idx.max() >= self.img_gen_queries.shape[0]:
                 raise ValueError("meta token 超出预定义 metaquery 长度")
-            
-            # 利用布尔索引直接替换指定位置的 embeddings
-            input_embeds[image_gen_context_token_mask] = self.image_gen_queries[meta_idx].to(input_embeds.device)
-
+            input_embeds[img_gen_context_token_mask] = self.img_gen_queries[meta_idx].to(input_embeds.device)
+        
         outputs = self.mllm.language_model.generate(
             inputs_embeds=input_embeds,
             attention_mask=attention_mask,
@@ -232,5 +173,9 @@ class Mini1oMLLM(PreTrainedModel):
             use_cache=True,
             **generate_kwargs,
         )
-
         return outputs
+
+    # save_pretrained 方法可以重载以确保模型和配置被同时保存，
+    # 这里直接调用父类实现即可，config 文件会以 config.json 形式保存到目录下
+    def save_pretrained(self, save_directory: str, **kwargs):
+        super().save_pretrained(save_directory, **kwargs)
