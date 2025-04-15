@@ -5,4 +5,3 @@ from .trainer import *
 from .dit import *
 from .config import *
 from .config_dit import *
-from .config_vit import *
