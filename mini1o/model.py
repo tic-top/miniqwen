@@ -11,17 +11,12 @@ from dataclasses import dataclass
 from typing import Optional, List, Tuple
 from transformers import AutoModelForCausalLM, GenerationConfig, PreTrainedModel
 from transformers.utils import ModelOutput
-
-try:
-    from dit import Mini1oDiT
-    from config import Mini1oConfig
-except:
-    from .dit import Mini1oDiT
-    from .config import Mini1oConfig
+from .dit import Mini1oDiT
+from .config import Mini1oConfig
 
 # Connector 模块：用于将输入（例如 image embedding）转换并对齐
 class Mini1oConnector(nn.Module):
-    def __init__(self, hidden_dim, diffusion_dim=2304, num_layers=6, nhead=8):
+    def __init__(self, hidden_dim=896, diffusion_dim=2304, num_layers=6, nhead=8):
         """
         先使用 Transformer Encoder 对输入进行对齐，再通过 Linear Projection 映射到目标维度
         """
@@ -52,14 +47,16 @@ class Mini1oMLLM(PreTrainedModel):
                  **kwargs):
         super().__init__(config)
         self.config = config
+
         if mllm_pretrained_path is not None:
-            # 这里是通过预训练模型路径加载一个model
             self.mllm = AutoModelForCausalLM.from_pretrained(mllm_pretrained_path, **kwargs)
+        else:
+            self.mllm = AutoModelForCausalLM.from_config(config.mllm_config, **kwargs)
+
+        if dit_pretrained_path is not None:
             self.dit = Mini1oDiT.from_pretrained(dit_pretrained_path, **kwargs)
         else:
-            # 这里是通过config初始化一个model
-            self.mllm = AutoModelForCausalLM.from_config(config.mllm_config, **kwargs)
-            self.dit = Mini1oDiT(config.dit_config)
+            self.dit = Mini1oDiT(config.dit_config, **kwargs)
 
         self.num_img_gen_tokens = config.num_img_gen_tokens
         self.img_context_token_id = config.img_context_token_id
@@ -70,10 +67,11 @@ class Mini1oMLLM(PreTrainedModel):
         self.img_gen_queries = nn.Parameter(torch.randn(self.num_img_gen_tokens, self.hidden_dim))
 
         # 到时候加一个connector config
-        diffusion_dim = config.get('diffusion_dim', 2304)
-        num_layers = config.get('num_layers', 6)
-        nhead = config.get('nhead', 8)
-        self.connector = Mini1oConnector(self.hidden_dim, diffusion_dim, num_layers, nhead)
+        assert self.hidden_dim == config.connector_config.hidden_dim, f"hidden_dim: {self.hidden_dim}, connector_config.hidden_dim: {config.connector_config.hidden_dim}"
+        self.connector = Mini1oConnector(config.connector_config.hidden_dim, 
+                                         config.connector_config.diffusion_dim, 
+                                         config.connector_config.num_layers, 
+                                         config.connector_config.nhead)
 
     def forward(
         self,

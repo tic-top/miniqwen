@@ -84,7 +84,7 @@ def load_image(image_file, input_size=448, max_num=12):
 # If you set `load_in_8bit=True`, you will need two 80GB GPUs.
 # If you set `load_in_8bit=False`, you will need at least three 80GB GPUs.
 # path = 'OpenGVLab/InternVL3-1B'
-path = "OpenGVLab/InternVL2_5-1B-MPO"
+path = "OpenGVLab/InternVL3-1B"
 
 # device_map = split_model(path)
 model = AutoModel.from_pretrained(

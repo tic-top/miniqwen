@@ -204,12 +204,16 @@ class Mini1oProcessor(ProcessorMixin):
     image_processor_class = "AutoImageProcessor"
     tokenizer_class = ("Qwen2Tokenizer", "Qwen2TokenizerFast")
 
-    def __init__(self, image_processor: Mini1oImageProcessor, tokenizer, chat_template: Union[str, None] = None, system_message: str = "", **kwargs):
+    def __init__(self, image_processor: Mini1oImageProcessor, 
+                 tokenizer, 
+                 chat_template: Union[str, None] = None,
+                 num_image_gen_tokens: int = 256,
+                 **kwargs):
         self.image_pad_token = "<|image_pad|>" if not hasattr(tokenizer, "image_token") else tokenizer.image_token
-        self.video_pad_token = "<|video_pad|>" if not hasattr(tokenizer, "video_token") else tokenizer.video_token
+        # self.video_pad_token = "<|video_pad|>" if not hasattr(tokenizer, "video_token") else tokenizer.video_token
         self.image_gen_token = "<|image_gen_pad|>" if not hasattr(tokenizer, "image_gen_token") else tokenizer.image_gen_token
-        self.video_gen_token = "<|video_gen_pad|>" if not hasattr(tokenizer, "video_gen_token") else tokenizer.video_gen_token
-        self.num_image_gen_token = 64
+        # self.video_gen_token = "<|video_gen_pad|>" if not hasattr(tokenizer, "video_gen_token") else tokenizer.video_gen_token
+        self.num_image_gen_token = num_image_gen_tokens
         super().__init__(image_processor, tokenizer, chat_template=chat_template)
         
     def __call__(

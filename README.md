@@ -89,3 +89,8 @@ Describe this image.
 ```
 
 
+
+
+todo 
+
+sana pipelin xformers 12.1TypeError: SanaTransformer2DModel.__init__() got an unexpected keyword argument 'torch_dtype'

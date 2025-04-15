@@ -34,7 +34,7 @@ class Mini1oConfig(PretrainedConfig):
             logger.info('dit_config is None. Initializing the DitConfig with default values.')
 
         if mllm_config is None:
-            mllm_config = {'_name_or_path': "OpenGVLab/InternVL2_5-1B-MPO"}
+            mllm_config = {'_name_or_path': "OpenGVLab/InternVL3-1B"}
             logger.info('mllm_config is None. Initializing the MLLMConfig with default values.')
 
         self.mllm_config = AutoConfig.from_pretrained(mllm_config['_name_or_path'], trust_remote_code=True)

@@ -54,12 +54,12 @@ class SanaTransformer2DConfig:
         self._extra_kwargs = kwargs.copy()    
         
     def to_dict(self):
-            # 将当前实例属性拷贝为字典
-            output = self.__dict__.copy()
-            # 将额外参数（如果有）加入输出中
-            extra = output.pop("_extra_kwargs", {})
-            output.update(extra)
-            return output
+        # 将当前实例属性拷贝为字典
+        output = self.__dict__.copy()
+        # 将额外参数（如果有）加入输出中
+        extra = output.pop("_extra_kwargs", {})
+        output.update(extra)
+        return output
 
 
 ###############################################################################

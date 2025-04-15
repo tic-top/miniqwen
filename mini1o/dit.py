@@ -72,7 +72,7 @@ def retrieve_timesteps(
 
 
 class Mini1oDiT(nn.Module):
-    def __init__(self, config: DitConfig):
+    def __init__(self, config: DitConfig, **kwargs):
         """
         Args:
             diffusion_config (dict): 配置字典，应包含以下键：
