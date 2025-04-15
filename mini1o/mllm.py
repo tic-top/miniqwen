@@ -19,23 +19,19 @@ class CausalULMOutputWithPast(ModelOutput):
 
 class Mini1oMLLM(PreTrainedModel):
     config_class = Mini1oConfig  # 指定自定义配置
-    
-    def __init__(self, config: Mini1oConfig, **kwargs):
+    def __init__(self, config: Mini1oConfig, mllm_pretrained_path: Optional[str] = None, **kwargs):
         super().__init__(config)
         self.config = config
-
-        # 从预训练模型加载基础 mllm（例如一个 causal MLLM 模型）
-        self.mllm = AutoModelForCausalLM.from_config(config.mllm_config, trust_remote_code=True, **kwargs)
-
-        # 记录特殊 token id 参数
+        if mllm_pretrained_path is not None:
+            self.mllm = AutoModelForCausalLM.from_pretrained(mllm_pretrained_path, **kwargs)
+        else:
+            self.mllm = AutoModelForCausalLM.from_config(config.mllm_config, **kwargs)
         self.num_img_gen_tokens = config.num_img_gen_tokens
         self.img_context_token_id = config.img_context_token_id
         self.img_gen_start_token_id = config.img_gen_start_token_id
         self.img_gen_context_token_id = config.img_gen_context_token_id
         self.img_gen_end_token_id = config.img_gen_end_token_id
-
-        # 依据基础模型 hidden_size 来初始化 meta query 参数
-        self.hidden_dim = self.mllm.config.hidden_size
+        self.hidden_dim = config.mllm_config.llm_config.hidden_size
         self.img_gen_queries = nn.Parameter(torch.randn(self.num_img_gen_tokens, self.hidden_dim))
 
     def forward(
@@ -177,3 +173,11 @@ class Mini1oMLLM(PreTrainedModel):
     @classmethod
     def from_config(cls, config: Mini1oConfig, **kwargs):
         return cls(config, **kwargs)
+    
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path: str, **kwargs):
+        # 通过 Mini1oConfig.from_pretrained 加载配置，这里要求配置文件包含所有 mllm 所需的信息
+        config = Mini1oConfig.from_pretrained(pretrained_model_name_or_path)
+        # 根据配置构造模型
+        model = cls.from_config(config, **kwargs)
+        return model

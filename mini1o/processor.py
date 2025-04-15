@@ -253,7 +253,7 @@ class Mini1oProcessor(ProcessorMixin):
             index = 0
             for i in range(len(text)):
                 while self.image_pad_token in text[i]:
-                    text[i] = text[i].replace(self.image_pad_token, "<|placeholder|>" * image_num_patches_list[index], 1)
+                    text[i] = text[i].replace(self.image_pad_token, "<|placeholder|>" * image_num_patches_list[index] * 256, 1)
                     index += 1
                 text[i] = text[i].replace("<|placeholder|>", self.image_pad_token)
             assert index == len(image_num_patches_list), "num of image pad and num of image are different"
