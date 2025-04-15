@@ -1,39 +1,28 @@
-import os
-import json
+# --------------------------------------------------------
+# Mini1o processor
+# Copyright (c) 2025 Yilin Jia
+# Licensed under The MIT License [see LICENSE for details]
+# --------------------------------------------------------
+
+
 from typing import Union, List, Dict, Any, Optional
 import torch
 import numpy as np
 from PIL import Image
-from transformers import ProcessorMixin, ImageProcessingMixin
-from transformers.image_processing_utils_fast import BaseImageProcessorFast
 from transformers.image_processing_utils import (
     BaseImageProcessor,
     BatchFeature,
-    get_size_dict,
 )
 from transformers.image_transforms import (
     convert_to_rgb,
     resize,
-    to_channel_dimension_format,
 )
 from transformers.image_utils import ImageInput, VideoInput
 from transformers.processing_utils import ImagesKwargs, ProcessingKwargs, ProcessorMixin, Unpack, VideosKwargs
 from transformers.tokenization_utils_base import PreTokenizedInput, TextInput
 from transformers.utils import (
-    TensorType,
-    add_start_docstrings,
-    is_torch_available,
     is_torchvision_available,
     is_torchvision_v2_available,
-    is_vision_available,
-    logging,
-)
-from torchvision import transforms
-from transformers.image_utils import (
-    IMAGENET_STANDARD_MEAN,
-    IMAGENET_STANDARD_STD,
-    ImageInput,
-    SizeDict,
 )
 
 if is_torchvision_available():
@@ -41,6 +30,10 @@ if is_torchvision_available():
         from torchvision.transforms.v2 import functional as F
     else:
         from torchvision.transforms import functional as F
+
+# from diffusers.image_processor import PixArtImageProcessor
+# from transformers import AutoProcessor 
+# AutoProcessor.register(PixArtImageProcessor, "PixArtImageProcessor")
 
 ##########################################
 # Mini1o 图像预处理器
@@ -200,6 +193,7 @@ class Mini1oProcessor(ProcessorMixin):
 
     参数:
         image_processor ([`Mini1oImageProcessor`]): 用于图像预处理。
+        gen_image_processor: vae_scale_factor= 0.41407
         tokenizer: 文本 tokenizer 对象。
         chat_template (str, optional): 可选的对话模板，用于组织多轮对话文本（内部使用 Jinja 或自定义模板）。
         system_message (str, optional): 系统提示信息，将在构造对话输入时自动添加。
@@ -216,8 +210,8 @@ class Mini1oProcessor(ProcessorMixin):
         self.image_gen_token = "<|image_gen_pad|>" if not hasattr(tokenizer, "image_gen_token") else tokenizer.image_gen_token
         self.video_gen_token = "<|video_gen_pad|>" if not hasattr(tokenizer, "video_gen_token") else tokenizer.video_gen_token
         self.num_image_gen_token = 64
-        super().__init__(image_processor, tokenizer, chat_template=chat_template, **kwargs)
-
+        super().__init__(image_processor, tokenizer, chat_template=chat_template)
+        
     def __call__(
         self,
         images: Union[Image.Image, str, List[Union[Image.Image, str]]] = None,
@@ -244,17 +238,11 @@ class Mini1oProcessor(ProcessorMixin):
             image_outputs = {}
             image_num_patches_list = None
         if gen_images is not None:
-            # 这个处理不太一样，可能要看sana怎么做的
+            # image_gen_outputs = self.gen_image_processor(images=gen_images)
             pass
-            # image_gen_outputs = self.image_processor(images=gen_images)
-            # image_gen_num_patches_list = image_gen_outputs["num_patches_list"]
         else:
             image_gen_outputs = {}
-            image_gen_num_patches_list = None
 
-        ## 有pixel value, num_patches_list
-        # assert 所有prompt的image_pad_token的数量，和image_outputs['num_patches_list'].shape[0]一样
-        # assert 所有prompt的video_gen_token的数量，和image_gen_outputs['num_patches_list'].shape[0]一样
         if not isinstance(text, list):
             text = [text]
         
@@ -262,9 +250,10 @@ class Mini1oProcessor(ProcessorMixin):
             index = 0
             for i in range(len(text)):
                 while self.image_pad_token in text[i]:
-                    text[i] = text[i].replace(self.image_pad_token, "<|placeholder|>" * image_num_patches_list[index], 1)
+                    text[i] = text[i].replace(self.image_pad_token, "<|placeholder|>" * image_num_patches_list[index] * 256, 1)
                     index += 1
                 text[i] = text[i].replace("<|placeholder|>", self.image_pad_token)
+            assert index == len(image_num_patches_list), "num of image pad and num of image are different"
         
         if True:
             index = 0

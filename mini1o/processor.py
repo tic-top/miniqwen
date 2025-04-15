@@ -1,31 +1,28 @@
-import os
-import json
+# --------------------------------------------------------
+# Mini1o processor
+# Copyright (c) 2025 Yilin Jia
+# Licensed under The MIT License [see LICENSE for details]
+# --------------------------------------------------------
+
+
 from typing import Union, List, Dict, Any, Optional
 import torch
 import numpy as np
 from PIL import Image
-from transformers import ProcessorMixin, ImageProcessingMixin
 from transformers.image_processing_utils import (
     BaseImageProcessor,
     BatchFeature,
-    get_size_dict,
 )
 from transformers.image_transforms import (
     convert_to_rgb,
     resize,
-    to_channel_dimension_format,
 )
 from transformers.image_utils import ImageInput, VideoInput
 from transformers.processing_utils import ImagesKwargs, ProcessingKwargs, ProcessorMixin, Unpack, VideosKwargs
 from transformers.tokenization_utils_base import PreTokenizedInput, TextInput
 from transformers.utils import (
-    TensorType,
-    add_start_docstrings,
-    is_torch_available,
     is_torchvision_available,
     is_torchvision_v2_available,
-    is_vision_available,
-    logging,
 )
 
 if is_torchvision_available():
@@ -34,9 +31,9 @@ if is_torchvision_available():
     else:
         from torchvision.transforms import functional as F
 
-from diffusers.image_processor import PixArtImageProcessor
-from transformers import AutoProcessor 
-AutoProcessor.register(PixArtImageProcessor, "PixArtImageProcessor")
+# from diffusers.image_processor import PixArtImageProcessor
+# from transformers import AutoProcessor 
+# AutoProcessor.register(PixArtImageProcessor, "PixArtImageProcessor")
 
 ##########################################
 # Mini1o 图像预处理器
