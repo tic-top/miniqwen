@@ -98,7 +98,7 @@ class Mini1oConfig(PretrainedConfig):
             `Dict[str, any]`: Dictionary of all the attributes that make up this configuration instance,
         """
         output = copy.deepcopy(self.__dict__)
-        output['dit_config'] = self.dit_config.to_dit()
+        output['dit_config'] = self.dit_config.to_dict()
         output['vision_config'] = self.vision_config.to_dict()
         output['llm_config'] = self.llm_config.to_dict()
         output['model_type'] = self.__class__.model_type

@@ -31,24 +31,24 @@ class Mini1o(nn.Module):
 
         参数：
             dit_config (dict): 用于初始化 Mini1oDiT 的配置字典。
-            mllm_config (dict): 用于初始化 Mini1oMLLM 的配置字典，其中需要包含 key "num_image_gen_tokens"。
+            mllm_config (dict): 用于初始化 Mini1oMLLM 的配置字典，其中需要包含 key "num_img_gen_tokens"。
             connector_config (dict): Connector 参数字典，可包含如下键：
                 - diffusion_dim: 扩散模型条件嵌入的维度（默认2304）
                 - num_layers: TransformerEncoder 层数（默认6）
                 - nhead: 注意力头个数（默认8）
         """
         super(Mini1o, self).__init__()
+        self.num_img_gen_tokens = mllm_config.get('num_img_gen_tokens', 64)
+
         self.dit = Mini1oDiT(dit_config)
         self.mllm = Mini1oMLLM(mllm_config)
-        hidden_dim = self.mllm.hidden_dim  # mllm 的隐藏层维度，作为 connector 的输入维度
-        self.hidden_dim = hidden_dim
+
+        ## connector
+        self.hidden_dim = self.mllm.hidden_size
         diffusion_dim = connector_config.get('diffusion_dim', 2304)
         num_layers = connector_config.get('num_layers', 6)
         nhead = connector_config.get('nhead', 8)
-        self.connector = Mini1oConnector(hidden_dim, diffusion_dim, num_layers, nhead)
-        # mllm_config 中应指定每个样本需要生成的 image generation tokens 数量
-        self.num_image_gen_tokens = mllm_config.get('num_image_gen_tokens', 64)
-
+        self.connector = Mini1oConnector(self.hidden_dim, diffusion_dim, num_layers, nhead)
     def forward(self, pixel_values: torch.Tensor, input_ids: torch.Tensor, attention_mask: torch.Tensor, clean_image: torch.Tensor, **kwargs):
         """
         前向计算（训练模式）：
@@ -80,9 +80,9 @@ class Mini1o(nn.Module):
         hidden_state = mllm_out.hidden_states[-1]
         # mllm forward 返回的 condition_mask（通常是通过 input_ids 得到的布尔 mask）
         condition_mask = mllm_out.condition_mask  # 形状 [B, seq_len]，True 表示图像生成 token
-        condition_tokens= hidden_state.reshape(-1, self.hidden_dim)[condition_mask].reshape(-1,self.num_image_gen_tokens, self.hidden_dim)
+        condition_tokens= hidden_state.reshape(-1, self.hidden_dim)[condition_mask].reshape(-1,self.num_img_gen_tokens, self.hidden_dim)
         # 3. 通过 connector 将 mllm 得到的条件信息映射到扩散模型的条件嵌入空间
-        conditioned = self.connector(condition_tokens)  # 形状 [B, num_image_gen_tokens, diffusion_dim]
+        conditioned = self.connector(condition_tokens)  # 形状 [B, num_img_gen_tokens, diffusion_dim]
         
         # 4. 将条件信息传给 dit（扩散模型部分），计算训练损失
         loss = self.dit(
@@ -125,15 +125,15 @@ class Mini1o(nn.Module):
         condition_tokens = []
         for i in range(batch_size):
             tokens = hidden_state[i][condition_mask[i]]
-            if tokens.shape[0] != self.num_image_gen_tokens:
+            if tokens.shape[0] != self.num_img_gen_tokens:
                 raise ValueError(
-                    f"期望每个样本有 {self.num_image_gen_tokens} 个图像生成 token，但第 {i} 个样本仅有 {tokens.shape[0]} 个"
+                    f"期望每个样本有 {self.num_img_gen_tokens} 个图像生成 token，但第 {i} 个样本仅有 {tokens.shape[0]} 个"
                 )
             condition_tokens.append(tokens)
         condition_tokens = torch.stack(condition_tokens, dim=0)
         
         # 2. 通过 connector 映射到扩散模型条件嵌入空间
-        conditioned = self.connector(condition_tokens)  # [B, num_image_gen_tokens, diffusion_dim]
+        conditioned = self.connector(condition_tokens)  # [B, num_img_gen_tokens, diffusion_dim]
         
         # 3. 调用 dit 的 sample 方法生成图像
         images = self.dit.sample(
