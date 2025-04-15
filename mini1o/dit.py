@@ -244,3 +244,19 @@ class Mini1oDiT(nn.Module):
         images = self.vae.decode(latents_dec, return_dict=False)[0]
 
         return images
+    
+    def from_pretrained(self, pretrained_model_name_or_path: str, **kwargs):
+        """
+        从预训练模型加载参数，并初始化 Mini1o 模型。
+
+        参数：
+            pretrained_model_name_or_path (str): 预训练模型的路径或名称。
+            **kwargs: 其他传入参数。
+        """
+        # 加载预训练模型的配置
+        config = DitConfig.from_pretrained(pretrained_model_name_or_path)
+        # 初始化模型
+        model = self.__class__(config, **kwargs)
+        # 加载预训练权重
+        model.load_state_dict(torch.load(pretrained_model_name_or_path), strict=False)
+        return model
