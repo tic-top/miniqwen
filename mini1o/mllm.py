@@ -20,12 +20,12 @@ class CausalULMOutputWithPast(ModelOutput):
 class Mini1oMLLM(PreTrainedModel):
     config_class = Mini1oConfig  # 指定自定义配置
     
-    def __init__(self, config: Mini1oConfig):
+    def __init__(self, config: Mini1oConfig, **kwargs):
         super().__init__(config)
         self.config = config
 
         # 从预训练模型加载基础 mllm（例如一个 causal MLLM 模型）
-        self.mllm = AutoModelForCausalLM.from_config(config.mllm_config, trust_remote_code=True)
+        self.mllm = AutoModelForCausalLM.from_config(config.mllm_config, trust_remote_code=True, **kwargs)
 
         # 记录特殊 token id 参数
         self.num_img_gen_tokens = config.num_img_gen_tokens
@@ -175,5 +175,5 @@ class Mini1oMLLM(PreTrainedModel):
         return outputs
 
     @classmethod
-    def from_config(cls, config: Mini1oConfig):
-        return cls(config)
+    def from_config(cls, config: Mini1oConfig, **kwargs):
+        return cls(config, **kwargs)
