@@ -37,6 +37,7 @@ class Mini1oConnector(nn.Module):
 @dataclass
 class CausalULMOutputWithPast(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
+    image_loss: Optional[torch.FloatTensor] = None
     logits: torch.FloatTensor = None
     past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
@@ -150,6 +151,7 @@ class Mini1oMLLM(PreTrainedModel):
             shift_labels = shift_labels.view(-1).to(shift_logits.device)
             loss = F.cross_entropy(shift_logits, shift_labels, reduction="mean")
         
+        image_loss = None
         if img_generation_mask is not None:
             # there exist some generated images
             condition_tokens= hidden_states.reshape(-1, self.hidden_dim)[img_generation_mask]
@@ -163,10 +165,11 @@ class Mini1oMLLM(PreTrainedModel):
 
         if not return_dict:
             out = (logits,) + outputs[1:]
-            return (loss,) + out if loss is not None else out
+            return (loss, image_loss,) + out if loss is not None else out
         
         return CausalULMOutputWithPast(
             loss=loss,
+            image_loss=image_loss,
             logits=logits,
             past_key_values=outputs.past_key_values,
             hidden_states=hidden_states,
