@@ -2,9 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import inspect
-
 from diffusers import SanaTransformer2DModel, AutoencoderDC, DPMSolverMultistepScheduler
-from diffusers.utils.torch_utils import randn_tensor  # 若需要，使用已有函数采样噪声
+from .config_dit import DitConfig
 from typing import Optional, Dict, Any, List, Tuple, Union
 
 def retrieve_timesteps(
@@ -67,7 +66,7 @@ def retrieve_timesteps(
 
 
 class Mini1oDiT(nn.Module):
-    def __init__(self, diffusion_config):
+    def __init__(self, config: DitConfig):
         """
         Args:
             diffusion_config (dict): 配置字典，应包含以下键：
@@ -76,13 +75,9 @@ class Mini1oDiT(nn.Module):
                 - 'scheduler_model_name': 用于加载 scheduler 的路径或名称
         """
         super(Mini1oDiT, self).__init__()
-        # 加载扩散网络（例如 SanaTransformer2DModel）
-        self.model = SanaTransformer2DModel.from_pretrained(diffusion_config['model_name'],subfolder="transformer",torch_dtype=torch.bfloat16)
-        # 加载 VAE 模型，用于将图像编码到 latent 空间
-        self.vae = AutoencoderDC.from_pretrained(diffusion_config['vae_model_name'], subfolder="vae",torch_dtype=torch.bfloat16)
-        # 加载 scheduler，该组件封装了向 latent 添加噪声的操作及时间步信息
-        self.scheduler = DPMSolverMultistepScheduler.from_pretrained(diffusion_config['scheduler_model_name'],subfolder="scheduler",torch_dtype=torch.bfloat16,)
-        # 从 scheduler 配置中获取训练时的总时间步数（如果配置中没有该项，可设定一个默认值，如 1000）
+        self.model = SanaTransformer2DModel(**config.model_config.to_dict())
+        self.vae = AutoencoderDC(**config.vae_config.to_dict())
+        self.scheduler = DPMSolverMultistepScheduler(**config.scheduler_config.to_dict())
         self.num_train_timesteps = getattr(self.scheduler.config, 'num_train_timesteps', 1000)
 
     def forward(self, 
