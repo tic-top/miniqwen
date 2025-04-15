@@ -17,7 +17,6 @@ class CausalULMOutputWithPast(ModelOutput):
     attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
     condition_mask: Optional[torch.Tensor] = None
 
-# 主模型类，集成自 Hugging Face 的 PreTrainedModel
 class Mini1oMLLM(PreTrainedModel):
     config_class = Mini1oConfig  # 指定自定义配置
     
@@ -25,8 +24,8 @@ class Mini1oMLLM(PreTrainedModel):
         super().__init__(config)
         self.config = config
 
-        # 从预训练模型加载基础 mllm（例如一个 causal LM 模型）
-        self.mllm = AutoModelForCausalLM(config.llm_config)
+        # 从预训练模型加载基础 mllm（例如一个 causal MLLM 模型）
+        self.mllm = AutoModelForCausalLM.from_config(config.mllm_config, trust_remote_code=True)
 
         # 记录特殊 token id 参数
         self.num_img_gen_tokens = config.num_img_gen_tokens
@@ -175,7 +174,6 @@ class Mini1oMLLM(PreTrainedModel):
         )
         return outputs
 
-    # save_pretrained 方法可以重载以确保模型和配置被同时保存，
-    # 这里直接调用父类实现即可，config 文件会以 config.json 形式保存到目录下
-    def save_pretrained(self, save_directory: str, **kwargs):
-        super().save_pretrained(save_directory, **kwargs)
+    @classmethod
+    def from_config(cls, config: Mini1oConfig):
+        return cls(config)
