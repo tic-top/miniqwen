@@ -54,7 +54,7 @@ class Mini1oMLLM(PreTrainedModel):
             self.mllm = AutoModelForCausalLM.from_config(config.mllm_config, **kwargs)
 
         if dit_pretrained_path is not None:
-            self.dit = Mini1oDiT.from_pretrained(dit_pretrained_path, **kwargs)
+            self.dit = Mini1oDiT(config=config.dit_config, pretrained_model_name_or_path = dit_pretrained_path, **kwargs)
         else:
             self.dit = Mini1oDiT(config.dit_config, **kwargs)
 

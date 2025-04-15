@@ -1,8 +1,11 @@
-path = "OpenGVLab/InternVL3-1B"
 from mini1o.processor import Mini1oProcessor, Mini1oImageProcessor
+from mini1o import Mini1oMLLM, Mini1oConfig
+import torch
 from transformers import AutoTokenizer
 from diffusers.image_processor import PixArtImageProcessor
+from PIL import Image
 
+path = "OpenGVLab/InternVL3-1B"
 image_processor = Mini1oImageProcessor()
 gen_image_processor = PixArtImageProcessor()
 tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True, use_fast=False)
@@ -11,9 +14,9 @@ chat_template = "{% set image_count = namespace(value=0) %}{% set video_count = 
 processor1o = Mini1oProcessor(image_processor=image_processor, 
                               tokenizer=tokenizer, 
                               chat_template=chat_template)
+
 # processor1o.save_pretrained('ckpt')
 
-from PIL import Image
 messages = [
     {
         "role": "user",
@@ -49,16 +52,11 @@ x = processor1o(
 )
 print(processor1o.batch_decode(x.input_ids, skip_special_tokens=False)[0])
 
-from mini1o import Mini1oMLLM, Mini1oConfig
-import torch
 
-config = Mini1oConfig()
-# model = Mini1oMLLM.from_config(config, 
-#                                torch_dtype=torch.bfloat16,
-#                                use_flash_attn=False,
-#                                trust_remote_code=True).to('cuda').eval()
+# config = Mini1oConfig()
 model = Mini1oMLLM.from_pretrained('ckpt', 
-                               mllm_pretrained_path='OpenGVLab/InternVL3-1B',
+                               mllm_pretrained_path=path,
+                               dit_pretrained_path = "Efficient-Large-Model/Sana_600M_512px_diffusers",
                                torch_dtype=torch.bfloat16,
                                use_flash_attn=False,
                                trust_remote_code=True).to('cuda').eval()
@@ -68,5 +66,5 @@ x['pixel_values'] = x['pixel_values'].to(torch.bfloat16)
 # x['pixel_values'] = load_image('sana.png', max_num=12).to(torch.bfloat16).cuda()
 # print(x)
 with torch.no_grad():
-    output = model.generate(**x, max_new_tokens=200, do_sample=True)
+    output = model.generate(**x, max_new_tokens=30, do_sample=True)
     print(processor1o.batch_decode(output, skip_special_tokens=False)[0])
