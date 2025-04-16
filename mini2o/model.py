@@ -9,7 +9,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from dataclasses import dataclass
 from typing import Optional, List, Tuple
-from transformers import AutoModelForCausalLM, GenerationConfig, PreTrainedModel, ModelOutput
+from transformers.utils import ModelOutput
+from transformers import AutoModelForCausalLM, GenerationConfig, PreTrainedModel
 from diffusers import SanaTransformer2DModel, AutoencoderDC, DPMSolverMultistepScheduler
 from .config import Mini1oConfig
 
@@ -40,7 +41,7 @@ class Connector(nn.Module):
 
 class Mini2oMLLM(PreTrainedModel):
     config_class = Mini1oConfig 
-    def __init__(self, config,**kwargs):
+    def __init__(self, config, **kwargs):
         super().__init__(config)
         self.config = config
         self.num_img_gen_tokens = config.num_img_gen_tokens
@@ -67,10 +68,10 @@ class Mini2oMLLM(PreTrainedModel):
     ## fix ##
   
     def init_mllm(self, model_name_or_path="OpenGVLab/InternVL3-1B"):
-        self.mllm = AutoModelForCausalLM.from_pretrained(model_name_or_path)
+        self.mllm = AutoModelForCausalLM.from_pretrained(model_name_or_path, trust_remote_code=True)
 
     def init_sana(self, model_name_or_path="Efficient-Large-Model/Sana_600M_512px_diffusers"):
-        self.sana = SanaTransformer2DModel.from_pretrained(model_name_or_path, subfolder = 'transformers')
+        self.sana = SanaTransformer2DModel.from_pretrained(model_name_or_path, subfolder = 'transformer')
         self.vae = AutoencoderDC.from_pretrained(model_name_or_path, subfolder = 'vae')
         self.scheduler =  DPMSolverMultistepScheduler.from_pretrained(model_name_or_path, subfolder = 'scheduler')
 
