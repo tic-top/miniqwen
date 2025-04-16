@@ -47,6 +47,7 @@ class Mini1oMLLM(PreTrainedModel):
                  **kwargs):
         super().__init__(config)
         self.config = config
+
         if mllm_pretrained_path is not None:
             self.mllm = AutoModelForCausalLM.from_pretrained(mllm_pretrained_path, **kwargs)
         else:

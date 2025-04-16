@@ -72,7 +72,10 @@ def retrieve_timesteps(
 
 
 class Mini1oDiT(nn.Module):
-    def __init__(self, config: DitConfig):
+    def __init__(self, 
+                 config: DitConfig, 
+                 pretrained_path: Optional[str] = None, 
+                 **kwargs):
         """
         Args:
             diffusion_config (dict): 配置字典，应包含以下键：
@@ -81,9 +84,14 @@ class Mini1oDiT(nn.Module):
                 - 'scheduler_model_name': 用于加载 scheduler 的路径或名称
         """
         super(Mini1oDiT, self).__init__()
-        self.model = SanaTransformer2DModel(**config.model_config.to_dict())
-        self.vae = AutoencoderDC(**config.vae_config.to_dict())
-        self.scheduler = DPMSolverMultistepScheduler(**config.scheduler_config.to_dict())
+        if pretrained_path is not None:
+            self.model = SanaTransformer2DModel.from_pretrained(pretrained_path, subfolder = 'transformers')
+            self.vae = AutoencoderDC.from_pretrained(pretrained_path, subfolder = 'vae')
+            self.scheduler =  DPMSolverMultistepScheduler.from_pretrained(pretrained_path, subfolder = 'scheduler')
+        else:
+            self.model = SanaTransformer2DModel(**config.model_config.to_dict())
+            self.vae = AutoencoderDC(**config.vae_config.to_dict())
+            self.scheduler = DPMSolverMultistepScheduler(**config.scheduler_config.to_dict())
         self.num_train_timesteps = getattr(self.scheduler.config, 'num_train_timesteps', 1000)
 
     def forward(self, 
@@ -244,3 +252,16 @@ class Mini1oDiT(nn.Module):
         images = self.vae.decode(latents_dec, return_dict=False)[0]
 
         return images
+    
+    def from_pretrained(self, pretrained_model_name_or_path: str, **kwargs):
+        """
+        从预训练模型加载参数，并初始化 Mini1o 模型。
+
+        参数：
+            pretrained_model_name_or_path (str): 预训练模型的路径或名称。
+            **kwargs: 其他传入参数。
+        """
+        # 加载预训练模型的配置
+        config = DitConfig.from_pretrained(pretrained_model_name_or_path)
+        model = self.__class__(config,  pretrained_model_name_or_path, **kwargs)
+        return model
