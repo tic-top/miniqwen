@@ -12,7 +12,7 @@ from typing import Optional, List, Tuple
 from transformers.utils import ModelOutput
 from transformers import AutoModelForCausalLM, GenerationConfig, PreTrainedModel
 from diffusers import SanaTransformer2DModel, AutoencoderDC, DPMSolverMultistepScheduler
-from .config import Mini1oConfig
+from .config import Mini2oConfig
 
 @dataclass
 class CausalULMOutputWithPast(ModelOutput):
@@ -40,7 +40,7 @@ class Connector(nn.Module):
 
 
 class Mini2oMLLM(PreTrainedModel):
-    config_class = Mini1oConfig 
+    config_class = Mini2oConfig 
     def __init__(self, config, **kwargs):
         super().__init__(config)
         self.config = config

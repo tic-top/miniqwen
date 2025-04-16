@@ -1,11 +1,41 @@
-# A trial to reimplement 4o
+# Try to implement mini4o
+We will try to use metaquery idea.
+Key Features:
+- ti2t: qa, vqa
+- ti2ti: multiple image gen(seed story,...), multi-round edit(got, ...)
+- reasoning: text reasoning; vqa reasoning; image generation reasoning
 
-## 2 Stage training
+## data compsitin
+### pretraining(mllm frozen, connector tune, dit tune)
+- multi image generation: CM3Leon, 多轮的交错, 比如菜谱啥的
+- image generation：这个是user最在乎的
+- image reconstruction：这个是用来调控比例的
+
+### finetuning(vit frozen, mllm tune, connector tune, dit tune) 
+image generation:
+image editing：本质能力的体现pixinstruct 
+multiround image editing： 本质能力体现2
+generation cot
+multi image generation: [Learn to Draw Free | Free Drawing Tutorials | ImagiDraw](https://www.imagidraw.com/)
+
+<|start of img token|>
+
+openqwen vargpt1.1
+text:
+instruct tuning
+text long cot
+
+visaul:
+vqa
+vqa long cot
+
+manga
+complex image decomposition
+
+
+
 ### Stage 1 pretraining
-Open sources data: pix2pix, kosmosg里面应该有，GOT里面有
-t2i
-ti2ti
-ti2ti2ti...
+
 kosmosg: LAION-2B [SBV+22], LAION-400M [SVB+21], COYO-700M [BPK+22], and Conceptual Captions [SDGS18, CSDS21]
 
 
@@ -87,10 +117,3 @@ Describe this image.
 <|im_end|>
 <|im_start|>assistant
 ```
-
-
-
-
-todo 
-
-sana pipelin xformers 12.1TypeError: SanaTransformer2DModel.__init__() got an unexpected keyword argument 'torch_dtype'

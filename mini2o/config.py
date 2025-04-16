@@ -11,7 +11,7 @@ from transformers.utils import logging
 
 logger = logging.get_logger(__name__)
 
-class Mini1oConnectorConfig:
+class ConnectorConfig:
     def __init__(
         self,
         hidden_dim: int = 896,
@@ -34,8 +34,8 @@ class Mini1oConnectorConfig:
         output.update(extra)
         return output
 
-class Mini1oConfig(PretrainedConfig):
-    model_type = 'mini1o'
+class Mini2oConfig(PretrainedConfig):
+    model_type = 'mini2o'
     is_composition = True
 
     def __init__(
@@ -65,7 +65,8 @@ class Mini1oConfig(PretrainedConfig):
                                 'nhead': 8}
             logger.info('connector_config is None. Initializing the ConnectorConfig with default values.')
     
-        self.connector_config = Mini1oConnectorConfig(**connector_config)
+        self.connector_config = ConnectorConfig(**connector_config)
+
         # Image generation related
         self.num_img_gen_tokens=num_img_gen_tokens
         self.img_gen_start_token_id=img_gen_start_token_id
@@ -82,7 +83,6 @@ class Mini1oConfig(PretrainedConfig):
             `Dict[str, any]`: Dictionary of all the attributes that make up this configuration instance,
         """
         output = copy.deepcopy(self.__dict__)
-        # output['dit_config'] = self.dit_config.to_dict()
         output['mllm_config'] = self.mllm_config.to_dict()
         output['connector_config'] = self.connector_config.to_dict()
         return output
